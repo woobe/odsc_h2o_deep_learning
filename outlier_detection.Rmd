@@ -1,0 +1,141 @@
+---
+title: "Outlier Detection"
+author: "Jo-fai Chow"
+date: "1 March 2017"
+output: 
+  html_document: 
+    fig_height: 8
+    fig_width: 10
+    highlight: kate
+    theme: united
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+options(htmltools.dir.version = FALSE)
+options(warn = -1)
+```
+
+R Script: ***outlier_detection.R***
+
+```{r eval=TRUE, tidy=FALSE}
+# Load R Packages
+suppressPackageStartupMessages(library(h2o))
+suppressPackageStartupMessages(library(mlbench)) # for datasets
+
+# Start and connect to a local H2O cluster
+h2o.init(nthreads = -1)
+h2o.no_progress()
+
+# Load BostonHousing dataset from mlbench
+data(BostonHousing)
+
+# Use as.h2o() to convert R data frame into H2O data frame
+h_boston <- as.h2o(BostonHousing)
+
+# Quick summary
+h2o.describe(h_boston)
+
+# Define target (y) and features (x)
+target <- "medv" # median house value
+features <- setdiff(colnames(h_boston), target)
+print(features)
+
+```
+
+---
+
+R Script: ***outlier_detection.R***
+
+```{r eval=TRUE, tidy=FALSE}
+# Run a Principal Components Analysis (PCA)
+model_pca <- h2o.prcomp(training_frame = h_boston, 
+                        x = features, 
+                        k = 2,
+                        transform = "STANDARDIZE",
+                        pca_method = "GLRM",
+                        use_all_factor_levels = TRUE,
+                        seed = 1234)
+
+# Extract the first two principle components
+h_pca <- h2o.predict(model_pca, h_boston)
+
+# Visualise
+d_pca <- as.data.frame(h_pca)
+plot(d_pca, main = "First Two Principle Components of Boston Housing Data")
+```
+
+---
+
+
+R Script: ***outlier_detection.R***
+
+```{r eval=TRUE, tidy=FALSE}
+# Training a Deep Autoencoder
+model <- h2o.deeplearning(x = features,
+                          training_frame = h_boston,
+                          autoencoder = TRUE,
+                          activation = "Tanh",
+                          hidden = c(100, 100, 100),
+                          epochs = 100,
+                          seed = 1234,
+                          reproducible = TRUE)
+
+# Calculate reconstruction errors (MSE)
+recon_errors <- h2o.anomaly(model, h_boston, per_feature = FALSE)
+print(recon_errors)
+```
+
+---
+
+R Script: ***outlier_detection.R***
+
+```{r eval=TRUE, tidy=FALSE}
+# Convert H2O data frame into R data types
+d_errors <- as.data.frame(recon_errors)
+n_errors <- as.numeric(recon_errors)
+
+# user-defined cut-off point
+cutoff <- quantile(n_errors, probs = 0.95) 
+
+# Identify Outliers
+row_outliers <- which(d_errors > cutoff) # based on plot above
+length(row_outliers)
+```
+
+
+---
+
+R Script: ***outlier_detection.R***
+
+```{r eval=TRUE, tidy=FALSE}
+# Plot Reconstruction Errors and Cutoff 
+plot(sort(d_errors$Reconstruction.MSE), main = "Reconstruction Error")
+abline(h = cutoff, col = "red") # red line = cutoff point
+```
+
+
+
+---
+
+R Script: ***outlier_detection.R***
+
+```{r eval=TRUE, tidy=FALSE}
+# Summary of Outliers
+h2o.describe(h_boston[row_outliers, ])
+```
+
+---
+
+R Script: ***outlier_detection.R***
+
+```{r eval=TRUE, tidy=FALSE}
+# Visualise
+d_pca$outlier <- 0
+d_pca[row_outliers, ]$outlier <- 1
+plot(d_pca[, 1:2], col = as.factor(d_pca$outlier),
+     main = "First Two Principle Components of Boston Housing Data\n
+             with Outliers Highlighted in Red")
+```
+
+<br><br>
