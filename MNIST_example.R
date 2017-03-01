@@ -1,0 +1,131 @@
+# ------------------------------------------------------------------------------------------------
+# Classic H2O Deep Learning
+# Based on MNIST data (Kaggle Version)
+# https://www.kaggle.com/c/digit-recognizer/data
+
+# For a complete tuning guide, see
+# https://github.com/h2oai/h2o-3/blob/master/h2o-docs/src/product/tutorials/dl/dlperf.Rmd
+# ------------------------------------------------------------------------------------------------
+
+# Load R Packages
+suppressPackageStartupMessages(library(h2o))
+
+# Start and connect to a local H2O cluster
+h2o.init(nthreads = -1)
+h2o.no_progress()
+
+# Import Kaggle MNIST (train)
+h_mnist <- h2o.importFile("kaggle_mnist_train.csv")
+
+# Convert label to categorical values
+h_mnist$label <- as.factor(h_mnist$label)
+
+# Quick summary
+h2o.describe(h_mnist$label)
+
+# Define target (y) and features (x)
+target <- "label" 
+features <- setdiff(colnames(h_mnist), target)
+print(features)
+
+
+# ------------------------------------------------------------------------------------------------
+# Custom function to visualise digit
+# ------------------------------------------------------------------------------------------------
+
+# Function
+show_digit <- function(h_frame, features) {
+  
+  # Convert to normal R data frame
+  d <- as.data.frame(h_frame[, features])
+  
+  # Reshape
+  m <- matrix(data = as.numeric(d), nrow = 28, ncol = 28, byrow = TRUE)
+  rotate <- function(x) t(apply(x, 2, rev))
+  m <- rotate(m)
+  
+  # Show image
+  image(m, axes = FALSE, col = grey(seq(0, 1, length = 256)))
+
+}
+
+# Test (not run)
+# show_digit(h_mnist[sample(1:100,1),], features)
+
+
+# ------------------------------------------------------------------------------------------------
+# Split dataset into train/test
+# ------------------------------------------------------------------------------------------------
+
+h_split <- h2o.splitFrame(h_mnist, ratios = 0.8, seed = 1234)
+h_train <- h_split[[1]]
+h_test <- h_split[[2]]
+
+
+# ------------------------------------------------------------------------------------------------
+# Build a Classic H2O Deep Learning Model with Manual Settings
+# ------------------------------------------------------------------------------------------------
+
+# Check out parameters for h2o.deeplearning
+?h2o.deeplearning
+
+# DL with manual settings
+model_manual <- h2o.deeplearning(x = features,
+                                 y = target,
+                                 training_frame = h_train,
+                                 activation = "Rectifier",
+                                 hidden = c(100, 100, 100),
+                                 epochs = 50)
+                                 
+# Evaluate
+h2o.performance(model_manual, newdata = h_test)
+
+
+# ------------------------------------------------------------------------------------------------
+# Build a Reproducible Classic H2O Deep Learning Model
+# ------------------------------------------------------------------------------------------------
+
+# DL with reproducible = TRUE and seed
+# Note 1: using one CPU thread only. Can be very slow.
+# Note 2: using a small network (50, 50) and one epoch for demo only.
+model_repro <- h2o.deeplearning(x = features,
+                                y = target,
+                                training_frame = h_train,
+                                hidden = c(50, 50),
+                                epochs = 1,
+                                reproducible = TRUE,
+                                seed = 1234)
+
+# Evaluate
+h2o.performance(model_repro, newdata = h_test)
+
+
+# ------------------------------------------------------------------------------------------------
+# Make Predictions
+# ------------------------------------------------------------------------------------------------
+
+# Make predictions
+yhat_test <- h2o.predict(model_manual, newdata = h_test)
+
+# Check some of the results visually
+set.seed(1234)
+for (n in 1:5) {
+  
+  # Random sample
+  n_samp_row <- sample(1:nrow(h_test), 1)
+  
+  # Show the digit
+  show_digit(h_test[n_samp_row,], features)
+  
+  # Show ground truth
+  cat("Ground Truth: ", as.character(h_test[n_samp_row, "label"]), "\n")
+  
+  # Show predictions
+  cat("Model Prediction: \n")
+  print(yhat_test[n_samp_row, ])
+  cat("\n")
+  
+}
+
+
+
